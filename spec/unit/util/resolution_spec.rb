@@ -49,7 +49,108 @@ describe Facter::Util::Resolution do
     res.limit.should == "testing"
   end
 
-
+  describe "when ignore_stderr" do
+    let(:res) { Facter::Util::Resolution.new "yay" }
+    
+    # We do this around block so that the tests don't actually spew
+    # stuff to STDERR. Using $stderr as opposed to STDERR within a 
+    # block is a reasonable expectation.  I don't know that it's
+    # possible to override STDERR within the currently running
+    # process, evidence points to no.  --jeffweiss 6 June 2012
+    around(:each) do |test|
+      oldstderr = $stderr
+      $stderr = StringIO.new
+      test.run
+      $stderr = oldstderr
+    end
+    
+    describe "is true" do
+      before(:each) do
+        res.ignore_stderr true
+      end
+      
+      describe "when writing to $stderr directly" do
+        before(:each) do
+          res.setcode do
+            $stderr.puts "blerg"
+            $stderr
+          end
+        end
+        
+        it "should not display" do
+          $stderr.expects(:puts).with("blerg").never
+          res.value
+        end        
+      end
+      
+      describe "when running Resolution.exec" do
+        before(:each) do
+          res.setcode do
+            Facter::Util::Resolution.exec("cat /some/non/existent/file")
+            $stderr
+          end
+        end
+        
+        # this needs some work because we needs to make sure either
+        # 1. this test won't run on platforms that don't have different cat 
+        #    output
+        # 2. this can stub as the right level that we can adequately fake the
+        #    world, but still test that STDERR is being captured for for the
+        #    subprocess
+        # --jeffweiss 6 june 2012
+        it "should not display" do
+          $stderr.expects(:puts).with('cat: /some/non/existent/file: No such file or directory').never
+          res.value
+        end
+      end
+    end
+  
+    describe "is false" do
+      before(:each) do
+        res.ignore_stderr false
+      end
+      
+      describe "when writing to $stderr directly" do
+        before(:each) do
+          res.setcode do
+            $stderr.puts "blerg"
+          end
+        end
+          
+        it "should display" do
+          $stderr.expects(:puts).with("blerg").once
+          res.value
+        end        
+      end
+      
+      describe "when running Resolution.exec" do
+        before(:each) do
+          res.setcode do
+            Facter::Util::Resolution.exec("cat /some/non/existent/file")
+          end
+        end
+        
+        it "should display" do
+          $stderr.expects(:puts).with('cat: /some/non/existent/file: No such file or directory').once
+          res.value
+        end        
+      end      
+    end
+    
+    describe "is default" do
+      before(:each) do
+        res.setcode do
+          $stderr.puts "blerg"
+        end
+      end
+      
+      it "should display" do
+        $stderr.expects(:puts).with("blerg").once
+        res.value
+      end
+    end
+  end
+  
   describe "when overriding environment variables" do
     it "should execute the caller's block with the specified env vars" do
       test_env = { "LANG" => "C", "FOO" => "BAR" }
@@ -718,13 +819,13 @@ describe Facter::Util::Resolution do
       context "binary is present" do
         it "should run the command if path to binary is absolute" do
           Facter::Util::Resolution.expects(:expand_command).with('/usr/bin/uname -m').returns('/usr/bin/uname -m')
-          Facter::Util::Resolution.expects(:`).with('/usr/bin/uname -m').returns 'x86_64'
+  Facter::Util::Resolution.stubs(:execute_code_in_default_shell).with('/usr/bin/uname -m').returns 'x86_64'
           Facter::Util::Resolution.exec('/usr/bin/uname -m').should == 'x86_64'
         end
 
         it "should run the expanded command if path to binary not absolute" do
           Facter::Util::Resolution.expects(:expand_command).with('uname -m').returns('/usr/bin/uname -m')
-          Facter::Util::Resolution.expects(:`).with('/usr/bin/uname -m').returns 'x86_64'
+          Facter::Util::Resolution.expects(:execute_code_in_default_shell).with('/usr/bin/uname -m').returns 'x86_64'
           Facter::Util::Resolution.exec('uname -m').should == 'x86_64'
         end
       end
@@ -732,7 +833,7 @@ describe Facter::Util::Resolution do
       context "binary is not present" do
         it "should not run the command if path to binary is absolute" do
           Facter::Util::Resolution.expects(:expand_command).with('/usr/bin/uname -m').returns nil
-          Facter::Util::Resolution.expects(:`).with('/usr/bin/uname -m').never
+          Facter::Util::Resolution.expects(:execute_code_in_default_shell).with('/usr/bin/uname -m').never
           Facter::Util::Resolution.exec('/usr/bin/uname -m').should be_nil
         end
         it "should not run the command if path to binary is not absolute" do
@@ -747,13 +848,13 @@ describe Facter::Util::Resolution do
       context "binary is present" do
         it "should run the command if path to binary is absolute" do
           Facter::Util::Resolution.expects(:expand_command).with(%q{C:\Windows\foo.exe /a /b}).returns(%q{C:\Windows\foo.exe /a /b})
-          Facter::Util::Resolution.expects(:`).with(%q{C:\Windows\foo.exe /a /b}).returns 'bar'
+          Facter::Util::Resolution.expects(:execute_code_in_default_shell).with(%q{C:\Windows\foo.exe /a /b}).returns 'bar'
           Facter::Util::Resolution.exec(%q{C:\Windows\foo.exe /a /b}).should == 'bar'
         end
 
         it "should run the expanded command if path to binary not absolute" do
           Facter::Util::Resolution.expects(:expand_command).with(%q{foo.exe /a /b}).returns(%q{C:\Windows\foo.exe /a /b})
-          Facter::Util::Resolution.expects(:`).with(%q{C:\Windows\foo.exe /a /b}).returns 'bar'
+          Facter::Util::Resolution.expects(:execute_code_in_default_shell).with(%q{C:\Windows\foo.exe /a /b}).returns 'bar'
           Facter::Util::Resolution.exec(%q{foo.exe /a /b}).should == 'bar'
         end
       end
@@ -761,18 +862,18 @@ describe Facter::Util::Resolution do
       context "binary is not present" do
         it "should not run the command if path to binary is absolute" do
           Facter::Util::Resolution.expects(:expand_command).with(%q{C:\Windows\foo.exe /a /b}).returns nil
-          Facter::Util::Resolution.expects(:`).with(%q{C:\Windows\foo.exe /a /b}).never
+          Facter::Util::Resolution.expects(:execute_code_in_default_shell).with(%q{C:\Windows\foo.exe /a /b}).never
           Facter::Util::Resolution.exec(%q{C:\Windows\foo.exe /a /b}).should be_nil
         end
         it "should try to run the command and return output of a shell-builtin" do
           Facter::Util::Resolution.expects(:expand_command).with(%q{echo foo}).returns nil
-          Facter::Util::Resolution.expects(:`).with(%q{echo foo}).returns 'foo'
+          Facter::Util::Resolution.expects(:execute_code_in_default_shell).with(%q{echo foo}).returns 'foo'
           Facter.expects(:warnonce).with('Using Facter::Util::Resolution.exec with a shell built-in is deprecated. Most built-ins can be replaced with native ruby commands. If you really have to run a built-in, pass "cmd /c your_builtin" as a command')
           Facter::Util::Resolution.exec(%q{echo foo}).should == 'foo'
         end
         it "should try to run the command and return nil if not shell-builtin" do
           Facter::Util::Resolution.expects(:expand_command).with(%q{echo foo}).returns nil
-          Facter::Util::Resolution.stubs(:`).with(%q{echo foo}).raises Errno::ENOENT, 'some_error_message'
+          Facter::Util::Resolution.stubs(:execute_code_in_default_shell).with(%q{echo foo}).raises Errno::ENOENT, 'some_error_message'
           Facter.expects(:warnonce).never
           Facter::Util::Resolution.exec(%q{echo foo}).should be_nil
         end

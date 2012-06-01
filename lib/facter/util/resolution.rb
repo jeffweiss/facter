@@ -5,6 +5,8 @@
 # suitable.
 require 'facter/util/confine'
 require 'facter/util/config'
+require 'stringio'
+require 'open3'
 
 require 'timeout'
 
@@ -168,7 +170,7 @@ class Facter::Util::Resolution
       out = nil
 
       begin
-        out = %x{#{code}}.chomp
+        out = execute_code_in_default_shell(code)
         Facter.warnonce 'Using Facter::Util::Resolution.exec with a shell built-in is deprecated. Most built-ins can be replaced with native ruby commands. If you really have to run a built-in, pass "cmd /c your_builtin" as a command' unless expanded_code
       rescue Errno::ENOENT => detail
         # command not found on Windows
@@ -184,6 +186,19 @@ class Facter::Util::Resolution
         return out
       end
     end
+  end
+  
+  def self.execute_code_in_default_shell(code)
+    error_output = nil
+    output = nil
+    Open3.popen3(code) do |stdin, stdout, stderr|
+      output = stdout.read.chomp
+      error_output = stderr.read.chomp
+    end
+    if error_output && !error_output.empty?
+      $stderr.puts error_output
+    end
+    output
   end
 
   # Add a new confine to the resolution mechanism.
@@ -204,6 +219,7 @@ class Facter::Util::Resolution
     @value = nil
     @timeout = 0
     @weight = nil
+    @ignore_stderr = false
   end
 
   # Return the importance of this resolution.
@@ -224,7 +240,11 @@ class Facter::Util::Resolution
 
   def preserve_whitespace
     @preserve_whitespace = true
-  end   
+  end
+  
+  def ignore_stderr(val)
+    @ignore_stderr = val
+  end
 
   # Set our code for returning a value.
   def setcode(string = nil, interp = nil, &block)
@@ -262,6 +282,21 @@ class Facter::Util::Resolution
   def to_s
     return self.value()
   end
+  
+  def capture_stderr(&block)
+    # we'll store this in a local variable so we don't get weird behaviour
+    # if we didn't preserve before the setcode block was called, but
+    # somehere in the setcode block, ignore_stderr is called.
+    # --jeffweiss 25 may 2012
+    ignore = @ignore_stderr
+    if ignore
+      $stderr, old_stderr = StringIO.new, $stderr
+    end
+    yield block
+    if ignore
+      $stderr = old_stderr
+    end
+  end
 
   # How we get a value for our resolution mechanism.
   def value
@@ -273,10 +308,12 @@ class Facter::Util::Resolution
 
     begin
       Timeout.timeout(limit) do
-        if @code.is_a?(Proc)
-          result = @code.call()
-        else
-          result = Facter::Util::Resolution.exec(@code)
+        capture_stderr do
+          if @code.is_a?(Proc)
+            result = @code.call()
+          else
+            result = Facter::Util::Resolution.exec(@code)
+          end
         end
       end
     rescue Timeout::Error => detail
