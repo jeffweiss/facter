@@ -17,6 +17,8 @@ describe "SSH fact" do
     # We need these facts loaded, but they belong to a file with a
     # different name, so load the file explicitly.
     Facter.collection.internal_loader.load(:ssh)
+    @host_rsa_content = my_fixture_read 'ssh_host_rsa_key'
+    @host_rsa_pub_content = my_fixture_read 'ssh_host_rsa_key.pub'
   end
 
 
@@ -52,8 +54,10 @@ describe "SSH fact" do
         Facter::Util::Resolution.stubs(:exec).with('sshd -T 2>/dev/null | grep hostkey').
           returns(my_fixture_read('sshd_t_hostkeys'))
         FileTest.stubs(:exists?).with('/etc/ssh/ssh_host_rsa_key').returns true
-        File.stubs(:read).with('/etc/ssh/ssh_host_rsa_key').returns(my_fixture_read('ssh_host_rsa_key'))
-        Facter.fact(sshrsakey).value.should == "AAAAB3NzaC1yc2EAAAABIwAAAQEAyh6q7HBnUr4v23YfnLM2VSWby6ZViNGnks1P8lBUi+drW/hTRQUUL1cWlB9FkG6TED+FO0Czuysr1FR1E9hUWR0Q+5TtnrK7XToZbCK4nPFgofmFRuCUzTtDvZFaRUKXyGSEJRU7kkfDlyi7Y4plkNs+EgeI0/a29CTi1potL/dPT1xbksvvaDaHDpE46B7VE/lPPQMhO1KAy/eSLuhlh1HWH1rIwn/2roMzyExuwUjD5FVLn9YSsfRrrLec3JQEsnR+9QYM8nK8LpxZYhmViK3/fbb2Wbtwts41VDGsQzvCb+DyHPIOf1dsqq7PBitQX0HnAWsFutSAKtm4fFDiaQ=="
+        File.stubs(:read).with('/etc/ssh/ssh_host_rsa_key').returns(@host_rsa_content)
+        FileTest.stubs(:exists?).with('/etc/ssh/ssh_host_rsa_key.pub').returns true
+        File.stubs(:read).with('/etc/ssh/ssh_host_rsa_key').returns(@host_rsa_pub_content)
+        Facter.fact(:sshrsakey).value.should == "AAAAB3NzaC1yc2EAAAABIwAAAQEAyh6q7HBnUr4v23YfnLM2VSWby6ZViNGnks1P8lBUi+drW/hTRQUUL1cWlB9FkG6TED+FO0Czuysr1FR1E9hUWR0Q+5TtnrK7XToZbCK4nPFgofmFRuCUzTtDvZFaRUKXyGSEJRU7kkfDlyi7Y4plkNs+EgeI0/a29CTi1potL/dPT1xbksvvaDaHDpE46B7VE/lPPQMhO1KAy/eSLuhlh1HWH1rIwn/2roMzyExuwUjD5FVLn9YSsfRrrLec3JQEsnR+9QYM8nK8LpxZYhmViK3/fbb2Wbtwts41VDGsQzvCb+DyHPIOf1dsqq7PBitQX0HnAWsFutSAKtm4fFDiaQ=="
       end
       # Now, let's go through each and individually flip then
       # on for that test.
