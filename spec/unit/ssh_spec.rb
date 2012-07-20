@@ -17,8 +17,6 @@ describe "SSH fact" do
     # We need these facts loaded, but they belong to a file with a
     # different name, so load the file explicitly.
     Facter.collection.internal_loader.load(:ssh)
-    @host_rsa_content = my_fixture_read 'ssh_host_rsa_key'
-    @host_rsa_pub_content = my_fixture_read 'ssh_host_rsa_key.pub'
   end
 
 
@@ -47,18 +45,6 @@ describe "SSH fact" do
           FileTest.stubs(:file?).with(full_path).returns false
         end
       end
-      # We test the fallback option of sshd -T here, because
-      # we've already disabled all the directories which should
-      # mean we fall back to the below fact.
-      it "returns hostkeys if sshd -T is invoked" do
-        Facter::Util::Resolution.stubs(:exec).with('sshd -T 2>/dev/null | grep hostkey').
-          returns(my_fixture_read('sshd_t_hostkeys'))
-        FileTest.stubs(:exists?).with('/etc/ssh/ssh_host_rsa_key').returns true
-        File.stubs(:read).with('/etc/ssh/ssh_host_rsa_key').returns(@host_rsa_content)
-        FileTest.stubs(:exists?).with('/etc/ssh/ssh_host_rsa_key.pub').returns true
-        File.stubs(:read).with('/etc/ssh/ssh_host_rsa_key').returns(@host_rsa_pub_content)
-        Facter.fact(:sshrsakey).value.should == "AAAAB3NzaC1yc2EAAAABIwAAAQEAyh6q7HBnUr4v23YfnLM2VSWby6ZViNGnks1P8lBUi+drW/hTRQUUL1cWlB9FkG6TED+FO0Czuysr1FR1E9hUWR0Q+5TtnrK7XToZbCK4nPFgofmFRuCUzTtDvZFaRUKXyGSEJRU7kkfDlyi7Y4plkNs+EgeI0/a29CTi1potL/dPT1xbksvvaDaHDpE46B7VE/lPPQMhO1KAy/eSLuhlh1HWH1rIwn/2roMzyExuwUjD5FVLn9YSsfRrrLec3JQEsnR+9QYM8nK8LpxZYhmViK3/fbb2Wbtwts41VDGsQzvCb+DyHPIOf1dsqq7PBitQX0HnAWsFutSAKtm4fFDiaQ=="
-      end
       # Now, let's go through each and individually flip then
       # on for that test.
       dirs.each do |dir|
@@ -84,6 +70,56 @@ describe "SSH fact" do
             Facter.fact(fingerprint_fact).value.should == fingerprint
           end
         end
+      end
+    end
+  end
+end
+
+describe "sshd -T fallback fact" do
+
+  dirs = [  '/etc/ssh',
+    '/usr/local/etc/ssh',
+    '/etc',
+    '/usr/local/etc',
+    '/etc/opt/ssh',
+  ]
+
+  before :each do
+    # We need these facts loaded, but they belong to a file with a
+    # different name, so load the file explicitly.
+    Facter.collection.internal_loader.load(:ssh)
+  end
+
+  { 'SSHRSAKey'   => [ 'rsa' , 'ssh_host_rsa_key', 'ssh_host_rsa_key.pub', '/data/ssh' ],
+    'SSHDSAKey'   => [ 'dsa' , 'ssh_host_dsa_key', 'ssh_host_dsa_key.pub', '/data/ssh' ],
+    'SSHECDSAKey' => [ 'ecdsa' , 'ssh_host_ecdsa_key', 'ssh_host_ecdsa_key.pub', '/data/ssh' ]
+  }.each_pair do |fact, data|
+    describe "#{fact}" do
+      let(:keytype) { data[0] }
+      let(:filename) { data[1] }
+      let(:pub_filename) { data[2] }
+      let(:path) { data[3] }
+      let(:filename_contents) { my_fixture_read :filename }
+      let(:pub_filename_contents) { my_fixture_read :pub_filename }
+
+      before(:each) do
+        dirs.each do |dir|
+          full_path = File.join(dir, pub_filename)
+          FileTest.stubs(:file?).with(full_path).returns false
+        end
+      end
+
+      # We test the fallback option of sshd -T here, because
+      # we've already disabled all the directories which should
+      # mean we fall back to the below fact.
+      it "returns hostkeys if sshd -T is invoked" do
+        Facter::Util::Resolution.stubs(:exec).with('sshd -T 2>/dev/null | grep hostkey').
+          returns(my_fixture_read('sshd_t_hostkeys'))
+        FileTest.stubs(:exists?).with("#{path}/#{filename}").returns true
+        File.stubs(:read).with("#{path}/#{filename}").returns(:filename_contents)
+        FileTest.stubs(:exists?).with("#{path}/#{pub_filename}").returns true
+        File.stubs(:read).with("#{path}/#{pub_filename}").returns(:pub_filename_contents)
+        Facter.fact(fact).value.should == :pub_filename_contents.chomp.split(/\s+/)[1]
       end
     end
   end
