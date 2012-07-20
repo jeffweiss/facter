@@ -10,36 +10,11 @@
 ## ssh.rb
 ## Facts related to SSH
 ##
-output = Facter::Util::Resolution.exec('sshd -T 2>/dev/null | grep hostkey')
-unless output.nil?
-  output.each_line do |s|
-    if s =~ /^hostkey/
-      # Look for the .pub version of sshd -T's hostkey entries.
-      filename = s.gsub('hostkey ', '').rstrip!.to_s << ".pub"
-      file = File.basename(filename)
-
-      # Check for the three kinds of hostkey and add a fact for each of them.
-      if FileTest.exists?(filename)
-        if file =~ /ecdsa|rsa|dsa/
-          tmp = $&
-          sshkey = "ssh#{tmp}key"
-          Facter.add(sshkey) do
-            has_weight 100
-            setcode do
-              value = File.read(filename).chomp.split(/\s+/)[1]
-              value
-            end
-          end
-        end
-      end
-    end
-  end
-end
 
 {"SSHDSAKey" => { :file => "ssh_host_dsa_key.pub", :sshfprrtype => 2 } , "SSHRSAKey" => { :file => "ssh_host_rsa_key.pub", :sshfprrtype => 1 }, "SSHECDSAKey" => { :file => "ssh_host_ecdsa_key.pub", :sshfprrtype => 3 } }.each do |name,key|
 
   Facter.add(name) do
-    has_weight 50
+    has_weight 100
     setcode do
       value = nil
 
@@ -92,4 +67,30 @@ end
 
   end
 
+end
+
+output = Facter::Util::Resolution.exec('sshd -T 2>/dev/null | grep hostkey')
+if output
+  output.each_line do |s|
+    if s =~ /^hostkey/
+      # Look for the .pub version of sshd -T's hostkey entries.
+      filename = s.gsub('hostkey ', '').rstrip!.to_s << ".pub"
+      file = File.basename(filename)
+
+      # Check for the three kinds of hostkey and add a fact for each of them.
+      if FileTest.exists?(filename)
+        if file =~ /ecdsa|rsa|dsa/
+          tmp = $&
+          sshkey = "ssh#{tmp}key"
+          Facter.add(sshkey) do
+            has_weight 50
+            setcode do
+              value = File.read(filename).chomp.split(/\s+/)[1]
+              value
+            end
+          end
+        end
+      end
+    end
+  end
 end

@@ -19,10 +19,6 @@ describe "SSH fact" do
     Facter.collection.internal_loader.load(:ssh)
   end
 
-  #it "if sshd -T contains hostkeys then they should be used" do
-  #  Facter::Util::Resolution.stubs(:exec).with('sshd -T 2>/dev/null | grep hostkey').
-  #    returns(my_fixture_read('sshd_t_hostkeys'))
-  #end
 
   # fingerprints extracted from ssh-keygen -r '' -f /etc/ssh/ssh_host_dsa_key.pub
   { 'SSHRSAKey' => [ 'ssh_host_rsa_key.pub' , "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDrs+KtR8hjasELsyCiiBplUeIi77hEHzTSQt1ALG7N4IgtMg27ZAcq0tl2/O9ZarQuClc903pgionbM9Q98CtAIoqgJwdtsor7ETRmzwrcY/mvI7ne51UzQy4Eh9WrplfpNyg+EVO0FUC7mBcay6JY30QKasePp+g4MkwK5cuTzOCzd9up9KELonlH7tTm2L0YI4HhZugwVoTFulCAZvPICxSk1B/fEKyGSZVfY/UxZNqg9g2Wyvq5u40xQ5eO882UwhB3w4IbmRnPKcyotAcqOJxA7hToMKtEmFct+vjHE8T37w8axE/1X9mdvy8IZbkEBL1cupqqb8a8vU1QTg1z", "SSHFP 1 1 1e4f163a1747d0d1a08a29972c9b5d94ee5705d0\nSSHFP 1 2 4e834c91e423d6085ed6dfb880a59e2f1b04f17c1dc17da07708af67c5ab6045" ],
@@ -45,11 +41,19 @@ describe "SSH fact" do
       # easier.  --jeffweiss 24 May 2012
       before(:each) do
         dirs.each do |dir|
-          # Make sshd -T fail for the rest of the tests.
-          Facter::Util::Resolution.stubs(:exec).with('sshd -T 2>/dev/null | grep hostkey').returns(nil)
           full_path = File.join(dir, filename)
           FileTest.stubs(:file?).with(full_path).returns false
         end
+      end
+      # We test the fallback option of sshd -T here, because
+      # we've already disabled all the directories which should
+      # mean we fall back to the below fact.
+      it "returns hostkeys if sshd -T is invoked" do
+        Facter::Util::Resolution.stubs(:exec).with('sshd -T 2>/dev/null | grep hostkey').
+          returns(my_fixture_read('sshd_t_hostkeys'))
+        FileTest.stubs(:exists?).with('/etc/ssh/ssh_host_rsa_key').returns true
+        File.stubs(:read).with('/etc/ssh/ssh_host_rsa_key').returns(my_fixture_read('ssh_host_rsa_key'))
+        Facter.fact(sshrsakey).value.should == "AAAAB3NzaC1yc2EAAAABIwAAAQEAyh6q7HBnUr4v23YfnLM2VSWby6ZViNGnks1P8lBUi+drW/hTRQUUL1cWlB9FkG6TED+FO0Czuysr1FR1E9hUWR0Q+5TtnrK7XToZbCK4nPFgofmFRuCUzTtDvZFaRUKXyGSEJRU7kkfDlyi7Y4plkNs+EgeI0/a29CTi1potL/dPT1xbksvvaDaHDpE46B7VE/lPPQMhO1KAy/eSLuhlh1HWH1rIwn/2roMzyExuwUjD5FVLn9YSsfRrrLec3JQEsnR+9QYM8nK8LpxZYhmViK3/fbb2Wbtwts41VDGsQzvCb+DyHPIOf1dsqq7PBitQX0HnAWsFutSAKtm4fFDiaQ=="
       end
       # Now, let's go through each and individually flip then
       # on for that test.
